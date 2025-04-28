@@ -65,8 +65,7 @@ class EncryptionClientApp(ctk.CTk):
         ctk.CTkLabel(self.frame_q, textvariable=self.last_submit_var, font=(None, 12), text_color="#00aaff").pack(pady=5)
         ctk.CTkLabel(self.frame_q, textvariable=self.feedback_var, font=(None, 14)).pack(pady=5)
         ctk.CTkLabel(self.frame_q, textvariable=self.waiting_var, font=(None, 12), text_color="gray").pack(pady=5)
-        self.feedback_next_btn = ctk.CTkButton(self.frame_q, text="Next", command=self.show_leaderboard)
-        # only shown after feedback!
+        self.feedback_next_btn = ctk.CTkButton(self.frame_q, text="Next", command=self.send_next)
 
         # ----- Leaderboard Frame -----
         self.frame_lb = ctk.CTkFrame(self)
@@ -74,60 +73,51 @@ class EncryptionClientApp(ctk.CTk):
         ctk.CTkLabel(self.frame_lb, text="🏆 Leaderboard", font=(None, 18)).pack(pady=(5,5))
         ctk.CTkLabel(self.frame_lb, textvariable=self.leaderboard_var, justify="left").pack(pady=5)
         self.next_btn = ctk.CTkButton(self.frame_lb, text="Next Round", command=self.send_start)
-        self.play_again_btn = ctk.CTkButton(self.frame_lb, text="Play Again", command=self.play_again)
-        self.end_game_btn = ctk.CTkButton(self.frame_lb, text="End Game", command=self.end_game)
+        self.end_game_btn = ctk.CTkButton(self.frame_lb, text="Quit", command=self.end_game)
 
         # Start receive loop!
         threading.Thread(target=self.recv_loop, daemon=True).start()
 
     def send_start(self):
         self.sock.sendall(b"start")  # notify server!
-        # hide all control buttons!
         self.start_btn.pack_forget()
         self.next_btn.pack_forget()
-        self.play_again_btn.pack_forget()
         self.end_game_btn.pack_forget()
         self.frame_lb.pack_forget()
 
+    def send_next(self):
+        self.sock.sendall(b"next")
+
     def show_leaderboard(self):
-        # hide question!
         self.frame_q.pack_forget()
         self.feedback_next_btn.pack_forget()
-        # show leaderboard!
         self.frame_lb.pack(fill="both", expand=True, padx=20, pady=20)
         if self.current_round < NUM_ROUNDS:
             self.gameover_var.set("")
             if self.is_host:
                 self.next_btn.pack(pady=10)
         else:
-            # final round: display Game Over message and final controls!
             top = self.leaderboard_var.get().split("\n")[0].split(":")[0]
             self.gameover_var.set(f"Game Over! Congratulations {top}!")
-            self.play_again_btn.pack(pady=10)
+            # only show quit button at the end
             self.end_game_btn.pack(pady=10)
 
-    def play_again(self):
-        # reset UI to lobby, preserve lobby_var!
-        self.frame_lb.pack_forget()
-        self.frame_q.pack_forget()
-        self.leaderboard_var.set("")
-        self.gameover_var.set("")
-        self.current_round = 0
-        self.round_var.set(f"Round 0/{NUM_ROUNDS}")
-        self.frame_lobby.pack(fill="both", expand=True, padx=20, pady=20)
-        if self.is_host:
-            self.start_btn.pack(pady=10)
-
     def end_game(self):
-        self.quit()  # close application!
+        try:
+            self.sock.close()
+        except:
+            pass
+        self.destroy()
+        import sys
+        sys.exit(0)
 
     def submit_answer(self):
         ans = self.answer_entry.get().strip().upper()
         if not ans:
-            messagebox.showwarning("Invalid", "Please submit a valid response.")  # input validation!
+            messagebox.showwarning("Invalid", "Please submit a valid response.")
             return
-        self.sock.sendall(ans.encode())  # send answer!
-        self.answer_entry.delete(0, ctk.END)  # clear input!
+        self.sock.sendall(ans.encode())
+        self.answer_entry.delete(0, ctk.END)
         self.last_submit_var.set(f"You submitted: {ans}")
         self.answer_entry.configure(state='disabled')
         self.submit_btn.configure(state='disabled')
@@ -196,12 +186,12 @@ class EncryptionClientApp(ctk.CTk):
                     fb = line.replace("FEEDBACK:", "").strip()
                     self.feedback_var.set(fb)
                     self.waiting_var.set("")
-                    self.feedback_next_btn.pack(pady=10)
+                    if self.is_host:
+                        self.feedback_next_btn.pack(pady=10)
                 elif line.startswith("LEADERBOARD:"):
                     lb = line.split("LEADERBOARD:",1)[1]
                     self.leaderboard_var.set(lb.replace(',', '\n'))
-                elif "GAME OVER" in line:
-                    # Show final leaderboard page without pop-up!
+                elif line == "NEXT":
                     self.show_leaderboard()
 
 if __name__ == '__main__':
