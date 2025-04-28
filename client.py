@@ -42,6 +42,7 @@ class EncryptionClientApp(ctk.CTk):
         self.waiting_var = ctk.StringVar()
         self.last_submit_var = ctk.StringVar()
         self.leaderboard_var = ctk.StringVar()
+        self.gameover_var = ctk.StringVar()  # final message!
 
         # ----- Lobby Frame -----
         self.frame_lobby = ctk.CTkFrame(self)
@@ -69,11 +70,10 @@ class EncryptionClientApp(ctk.CTk):
 
         # ----- Leaderboard Frame -----
         self.frame_lb = ctk.CTkFrame(self)
-        ctk.CTkLabel(self.frame_lb, text="🏆 Leaderboard", font=(None, 18)).pack(pady=(10,5))
+        ctk.CTkLabel(self.frame_lb, textvariable=self.gameover_var, font=(None, 20)).pack(pady=(10,5))
+        ctk.CTkLabel(self.frame_lb, text="🏆 Leaderboard", font=(None, 18)).pack(pady=(5,5))
         ctk.CTkLabel(self.frame_lb, textvariable=self.leaderboard_var, justify="left").pack(pady=5)
-        # host-only Next Round for non-final rounds
         self.next_btn = ctk.CTkButton(self.frame_lb, text="Next Round", command=self.send_start)
-        # final-round buttons
         self.play_again_btn = ctk.CTkButton(self.frame_lb, text="Play Again", command=self.play_again)
         self.end_game_btn = ctk.CTkButton(self.frame_lb, text="End Game", command=self.end_game)
 
@@ -82,7 +82,7 @@ class EncryptionClientApp(ctk.CTk):
 
     def send_start(self):
         self.sock.sendall(b"start")  # notify server!
-        # hide lobby and leaderboard controls!
+        # hide all control buttons!
         self.start_btn.pack_forget()
         self.next_btn.pack_forget()
         self.play_again_btn.pack_forget()
@@ -90,26 +90,28 @@ class EncryptionClientApp(ctk.CTk):
         self.frame_lb.pack_forget()
 
     def show_leaderboard(self):
-        # hide question frame and feedback next!
+        # hide question!
         self.frame_q.pack_forget()
         self.feedback_next_btn.pack_forget()
-        # display leaderboard frame!
+        # show leaderboard!
         self.frame_lb.pack(fill="both", expand=True, padx=20, pady=20)
-        # show appropriate buttons
         if self.current_round < NUM_ROUNDS:
+            self.gameover_var.set("")
             if self.is_host:
                 self.next_btn.pack(pady=10)
         else:
-            # final round: show Play Again and End Game
+            # final round: display Game Over message and final controls!
+            top = self.leaderboard_var.get().split("\n")[0].split(":")[0]
+            self.gameover_var.set(f"Game Over! Congratulations {top}!")
             self.play_again_btn.pack(pady=10)
             self.end_game_btn.pack(pady=10)
 
     def play_again(self):
-        # reset to lobby UI!
+        # reset UI to lobby, preserve lobby_var!
         self.frame_lb.pack_forget()
         self.frame_q.pack_forget()
-        self.lobby_var.set("")
         self.leaderboard_var.set("")
+        self.gameover_var.set("")
         self.current_round = 0
         self.round_var.set(f"Round 0/{NUM_ROUNDS}")
         self.frame_lobby.pack(fill="both", expand=True, padx=20, pady=20)
@@ -126,13 +128,13 @@ class EncryptionClientApp(ctk.CTk):
             return
         self.sock.sendall(ans.encode())  # send answer!
         self.answer_entry.delete(0, ctk.END)  # clear input!
-        self.last_submit_var.set(f"You submitted: {ans}")  # show last!
-        self.answer_entry.configure(state='disabled')  # disable entry!
-        self.submit_btn.configure(state='disabled')  # disable submit!
-        self.waiting_var.set("Waiting for other players' responses...")  # waiting!
+        self.last_submit_var.set(f"You submitted: {ans}")
+        self.answer_entry.configure(state='disabled')
+        self.submit_btn.configure(state='disabled')
+        self.waiting_var.set("Waiting for other players' responses...")
 
     def start_timer(self):
-        self.timer_count = ROUND_TIME  # reset timer!
+        self.timer_count = ROUND_TIME
         self.timer_running = True
         self.update_timer()
 
@@ -142,7 +144,7 @@ class EncryptionClientApp(ctk.CTk):
         self.timer_var.set(f"Timer: {self.timer_count}s")
         if self.timer_count > 0:
             self.timer_count -= 1
-            self.after(1000, self.update_timer)  # countdown!
+            self.after(1000, self.update_timer)
         else:
             self.answer_entry.configure(state='disabled')
             self.submit_btn.configure(state='disabled')
@@ -152,7 +154,7 @@ class EncryptionClientApp(ctk.CTk):
         buffer = ""
         while True:
             try:
-                data = self.sock.recv(4096).decode()  # receive!
+                data = self.sock.recv(4096).decode()
             except:
                 break
             if not data:
@@ -165,14 +167,14 @@ class EncryptionClientApp(ctk.CTk):
                     continue
                 if line.startswith("HOST:"):
                     self.is_host = True
-                    self.start_btn.pack(pady=10)  # show start for host!
+                    self.start_btn.pack(pady=10)
                 elif line.startswith("LOBBY:"):
                     names = line.split("LOBBY:",1)[1]
-                    self.lobby_var.set(names.replace(',', '\n'))  # update lobby!
+                    self.lobby_var.set(names.replace(',', '\n'))
                 elif line.startswith("ROUND:"):
                     num = int(line.split(':',1)[1])
                     self.current_round = num
-                    self.round_var.set(f"Round {num}/{NUM_ROUNDS}")  # update round!
+                    self.round_var.set(f"Round {num}/{NUM_ROUNDS}")
                 elif line.startswith("CHALLENGE:"):
                     _, payload = line.split("CHALLENGE:",1)
                     cipher, hint = payload.split("|",1)
@@ -187,24 +189,20 @@ class EncryptionClientApp(ctk.CTk):
                     self.hint_var.set(hint.split("HINT:",1)[1].strip())
                     self.frame_lobby.pack_forget()
                     self.frame_lb.pack_forget()
-                    self.frame_q.pack(fill="both", expand=True, padx=20, pady=20)  # show question!
+                    self.frame_q.pack(fill="both", expand=True, padx=20, pady=20)
                     self.start_timer()
                 elif line.startswith("FEEDBACK:") or line.startswith("Time's up!"):
-                    self.timer_running = False  # stop timer!
+                    self.timer_running = False
                     fb = line.replace("FEEDBACK:", "").strip()
                     self.feedback_var.set(fb)
                     self.waiting_var.set("")
-                    self.feedback_next_btn.pack(pady=10)  # show feedback next!
+                    self.feedback_next_btn.pack(pady=10)
                 elif line.startswith("LEADERBOARD:"):
                     lb = line.split("LEADERBOARD:",1)[1]
-                    self.leaderboard_var.set(lb.replace(',', '\n'))  # set leaderboard!
+                    self.leaderboard_var.set(lb.replace(',', '\n'))
                 elif "GAME OVER" in line:
-                    messagebox.showinfo("Game Over", line)
-                    try:
-                        self.sock.close()
-                    except:
-                        pass
-                    self.quit()  # close application!
+                    # Show final leaderboard page without pop-up!
+                    self.show_leaderboard()
 
 if __name__ == '__main__':
     app = EncryptionClientApp()
